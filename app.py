@@ -436,12 +436,11 @@ def reset_password():
 # --- IDCODE Topup route (existing) ---
 IDCODE_TEMPLATE = """
 <h2>IDCODE Topup [BD SERVER]</h2>
-<a href="{{ url_for('home') }}">LOL TOPUP Home</a> | <a href="{{ url_for('logout') }}">Logout</a>
+<a href="{{ url_for('home') }}">LOL TOPUPl Home</a> | <a href="{{ url_for('logout') }}">Logout</a>
 
 {% if error %}
   <p style="color:red">{{ error|safe }}</p>
 {% endif %}
-
 <form method="post">
   <h3>1. Select Recharge</h3>
   {% for val, label, price in [
@@ -483,6 +482,7 @@ IDCODE_TEMPLATE = """
   <button type="submit">Order</button>
 </form>
 
-<div><b>Note:</b> Please double-check your
+<div><b>Note:</b> Please double-check your player id. payment once made cannot be refunded.</div>
+"""
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
