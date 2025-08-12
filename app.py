@@ -21,8 +21,7 @@ PRODUCTS = [
     {"name": "Diamond Pack", "img": "https://via.placeholder.com/150?text=Diamond"},
 ]
 
-# --- Part 1: Home and Signup templates/routes ---
-
+# Home page
 HOME_TEMPLATE = """
 <!doctype html>
 <title>LOL TOPUP Clone - Home</title>
@@ -46,6 +45,7 @@ HOME_TEMPLATE = """
 </ul>
 """
 
+# Signup page
 SIGNUP_TEMPLATE = """
 <!doctype html>
 <title>Sign Up - LOL TOPUP</title>
@@ -93,8 +93,9 @@ def signup():
             session["pending_verification_email"] = email
             return redirect(url_for("verify_email"))
     return render_template_string(SIGNUP_TEMPLATE, error=error, request=request)
-  # --- Part 2: Login, Verification, Forgot Password templates and routes ---
 
+# --- Paste next part below ---
+# Login page
 LOGIN_TEMPLATE = """
 <!doctype html>
 <title>Login - LOL TOPUP</title>
@@ -111,6 +112,7 @@ LOGIN_TEMPLATE = """
 {% endif %}
 """
 
+# Email verification page
 VERIFY_TEMPLATE = """
 <!doctype html>
 <title>Email Verification - LOL TOPUP</title>
@@ -125,6 +127,7 @@ VERIFY_TEMPLATE = """
 {% endif %}
 """
 
+# Forgot password page
 FORGOT_PASSWORD_TEMPLATE = """
 <!doctype html>
 <title>Forgot Password - LOL TOPUP</title>
@@ -138,23 +141,6 @@ FORGOT_PASSWORD_TEMPLATE = """
 {% if message %}
 <p style="color:green;">{{ message }}</p>
 {% endif %}
-{% if error %}
-<p style="color:red;">{{ error }}</p>
-{% endif %}
-"""
-
-RESET_PASSWORD_TEMPLATE = """
-<!doctype html>
-<title>Reset Password - LOL TOPUP</title>
-<h1>Reset Password</h1>
-<form method="post">
-  Email:<br><input type="email" name="email" required value="{{ request.form.email or '' }}"><br>
-  Reset Code:<br><input type="text" name="code" required><br>
-  New Password:<br><input type="password" name="new_password" required><br>
-  Confirm New Password:<br><input type="password" name="confirm_new_password" required><br>
-  <button type="submit">Reset Password</button>
-</form>
-<p><a href="{{ url_for('login') }}">Back to Login</a></p>
 {% if error %}
 <p style="color:red;">{{ error }}</p>
 {% endif %}
@@ -198,11 +184,31 @@ def login():
             flash("Logged in successfully.")
             return redirect(url_for("home"))
     return render_template_string(LOGIN_TEMPLATE, error=error, request=request)
-  @app.route("/logout")
+
+# --- Paste next part below ---
+@app.route("/logout")
 def logout():
     session.pop("email", None)
     flash("Logged out.")
     return redirect(url_for("home"))
+
+# Reset password request page
+RESET_PASSWORD_TEMPLATE = """
+<!doctype html>
+<title>Reset Password - LOL TOPUP</title>
+<h1>Reset Password</h1>
+<form method="post">
+  Email:<br><input type="email" name="email" required value="{{ request.form.email or '' }}"><br>
+  Reset Code:<br><input type="text" name="code" required><br>
+  New Password:<br><input type="password" name="new_password" required><br>
+  Confirm New Password:<br><input type="password" name="confirm_new_password" required><br>
+  <button type="submit">Reset Password</button>
+</form>
+<p><a href="{{ url_for('login') }}">Back to Login</a></p>
+{% if error %}
+<p style="color:red;">{{ error }}</p>
+{% endif %}
+"""
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
@@ -245,9 +251,7 @@ def reset_password():
             return redirect(url_for("login"))
     return render_template_string(RESET_PASSWORD_TEMPLATE, error=error, request=request)
 
-# --- Part 3 end ---
-# --- Part 4: IDCODE Topup page ---
-
+# --- Paste next part below ---
 IDCODE_TEMPLATE = """
 <!doctype html>
 <title>IDCODE Topup [BD SERVER] - LOL TOPUP</title>
@@ -337,5 +341,8 @@ def idcode_topup():
             """
     return render_template_string(IDCODE_TEMPLATE, error=error, request=request)
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
+
+
