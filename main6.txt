@@ -1,0 +1,452 @@
+from flask import Flask, render_template_string, request, redirect, url_for, session
+import os
+import json
+from flask_dance.contrib.google import make_google_blueprint, google
+
+app = Flask(__name__)
+app.secret_key = "supersecretkey"
+
+# Products for home page
+PRODUCTS = [
+    {"name": "IDCODE Topup [BD SERVER]", "img": "https://i.postimg.cc/W4zZYddK/1748714434.png"},
+    {"name": "Free Fire Like", "img": "https://i.postimg.cc/t4Cn7sNT/1748714728.png"},
+    {"name": "E-Badge/Evo Access (Bd)", "img": "https://i.postimg.cc/Xvtr2QSG/1748714551.png"},
+    {"name": "Weekly Lite", "img": "https://i.postimg.cc/WpGdnG9z/1748714560.png"},
+    {"name": "Instant Top Up", "img": "https://via.placeholder.com/150?text=Instant"},
+    {"name": "Diamond Pack", "img": "https://via.placeholder.com/150?text=Diamond"}
+]
+
+HOME_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LOL TOPUP Clone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin:0; font-family: Arial, sans-serif; background:#f8f9fa; }
+        header {
+            background: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        .logo { font-size: 20px; font-weight: bold; color: #ff6600; }
+        .logo span { color: #6a1b9a; }
+        .login-btn {
+            background: #ff3b3b; color: white; border: none;
+            padding: 6px 12px; border-radius: 5px; cursor: pointer;
+        }
+        .product-section { padding: 15px; }
+        .product-section h2 { text-align: center; margin-bottom: 15px; }
+        .products {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        .product {
+            background: white; padding: 10px; border-radius: 8px;
+            text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 14px; cursor: pointer;
+        }
+        .product img { width: 100%; border-radius: 5px; }
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: white; border-top: 1px solid #ddd;
+            display: flex; justify-content: space-around; padding: 6px 0;
+        }
+        .bottom-nav a {
+            text-align: center; font-size: 12px; color: #333; text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">LOL <span>TOPUP</span></div>
+    <button class="login-btn" onclick="location.href='{{ url_for('login') }}'">Login</button>
+</header>
+
+<div class="product-section">
+    <h2>FREE FIRE TOPUP</h2>
+    <div class="products">
+        {% for p in products %}
+        <div class="product" onclick="location.href='{{ url_for('idcode_topup') if p.name.startswith('IDCODE') else '#' }}'">
+            <img src="{{ p.img }}" alt="{{ p.name }}">
+            <div>{{ p.name }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="bottom-nav">
+    <a href="#">🏠<br>Home</a>
+    <a href="#">🎥<br>Tutorial</a>
+    <a href="#">💎<br>TopUp</a>
+    <a href="#">📞<br>Contact Us</a>
+</div>
+
+</body>
+</html>
+"""
+
+@app.route("/")
+def home():
+    return render_template_string(HOME_TEMPLATE, products=PRODUCTS)
+
+#next part here brotha
+# --- OAuth Setup ---
+GOOGLE_CLIENT_ID = "916283515013-i03jklnbutcqg0vlortds1tu1tptvulf.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "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"
+
+# For development only: allow HTTP (not HTTPS)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+google_bp = make_google_blueprint(
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    scope=["profile", "email"],
+    redirect_url="/google_login_callback"
+)
+app.register_blueprint(google_bp, url_prefix="/login")
+
+# --- JSON login storage helpers ---
+LOGIN_FILE = "login.json"
+
+def load_logins():
+    if not os.path.exists(LOGIN_FILE):
+        with open(LOGIN_FILE, "w") as f:
+            f.write("{}")
+    with open(LOGIN_FILE, "r") as f:
+        return json.load(f)
+
+def save_logins(data):
+    with open(LOGIN_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+# --- Login route redirects to Google OAuth ---
+@app.route("/login")
+def login():
+    if google.authorized and session.get("user_id"):
+        return redirect(url_for("profile"))
+    return redirect(url_for("google.login"))
+
+# --- Google OAuth callback ---
+@app.route("/google_login_callback")
+def google_login_callback():
+    if not google.authorized:
+        return redirect(url_for("google.login"))
+    resp = google.get("/oauth2/v2/userinfo")
+    if not resp.ok:
+        return "Failed to fetch user info from Google.", 500
+    user_info = resp.json()
+    email = user_info["email"]
+    user_id = user_info["id"]
+
+    # Load existing users
+    users = load_logins()
+
+    # Save or update user info
+    users[user_id] = {
+        "email": email,
+        "name": user_info.get("name"),
+        "profile_pic": user_info.get("picture")
+    }
+    save_logins(users)
+
+    # Save user id in session
+    session["user_id"] = user_id
+
+    return redirect(url_for("profile"))
+#next part here 2
+PROFILE_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Profile - LOL TOPUP</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f5f7fa; padding: 20px; }
+  .profile {
+    background: white; max-width: 400px; margin: 30px auto; padding: 20px; border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center;
+  }
+  img { border-radius: 50%; width: 100px; height: 100px; }
+  h2 { color: #b72647; margin: 15px 0 5px; }
+  p { font-size: 14px; color: #555; margin: 5px 0; }
+  a.logout {
+    display: inline-block; margin-top: 20px; color: #b72647; font-weight: 700;
+    text-decoration: none; border: 2px solid #b72647; padding: 8px 15px; border-radius: 6px;
+  }
+  a.logout:hover { background: #b72647; color: white; }
+</style>
+</head>
+<body>
+  <div class="profile">
+    {% if user %}
+      <img src="{{ user.profile_pic }}" alt="Profile Picture" />
+      <h2>{{ user.name }}</h2>
+      <p><b>Email:</b> {{ user.email }}</p>
+      <a href="{{ url_for('logout') }}" class="logout">Logout</a>
+    {% else %}
+      <p>You are not logged in. <a href="{{ url_for('login') }}">Login here</a></p>
+    {% endif %}
+  </div>
+</body>
+</html>
+"""
+
+@app.route("/profile")
+def profile():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    users = load_logins()
+    user = users.get(user_id)
+    return render_template_string(PROFILE_TEMPLATE, user=user)
+#next part here 3
+IDCODE_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>IDCODE Topup [BD SERVER]</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f5f7fa; padding: 20px; }
+  header {
+    background: #fff; padding: 10px 15px; border-bottom: 1px solid #ddd;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .logo { font-weight: bold; color: #b72647; font-size: 20px; }
+  nav a { margin-left: 10px; text-decoration: none; color: #b72647; font-weight: 600; }
+  h1 { color: #b72647; margin-top: 30px; }
+  form { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 0 12px rgba(0,0,0,0.1); max-width: 520px; margin: 20px auto; }
+  .error-message { color: red; font-weight: 700; margin-bottom: 10px; }
+  section { margin-bottom: 20px; }
+  .recharge-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+  }
+  label.recharge-option {
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    color: #333;
+    user-select: none;
+  }
+  label.recharge-option:hover {
+    border-color: #b72647;
+    color: #b72647;
+  }
+  label.recharge-option input {
+    display: none;
+  }
+  label.recharge-option input:checked + span {
+    font-weight: 700;
+    color: #b72647;
+  }
+  .price {
+    font-weight: 700;
+    color: #ff6600;
+    margin-left: 6px;
+  }
+  .account-info input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+  }
+  .payment-choice {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .payment-choice input {
+    display: none;
+  }
+  .payment-choice label {
+    border: 1.5px solid #ddd;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: #333;
+  }
+  .payment-choice label:hover {
+    border-color: #b72647;
+    color: #b72647;
+  }
+  .payment-choice input:checked + label {
+    border-color: #b72647;
+    color: #b72647;
+    font-weight: 700;
+  }
+  .payment-choice img {
+    width: 24px;
+    height: 24px;
+  }
+  .login-submit {
+    background: #b72647;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    width: 100%;
+    font-weight: 700;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .login-submit:hover {
+    background: #8e1b38;
+  }
+  .rules {
+    margin-top: 15px;
+    font-size: 13px;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">LOL TOPUP</div>
+  <nav>
+    <a href="{{ url_for('home') }}">Home</a>
+    <a href="#">Contact Us</a>
+    <a href="{{ url_for('login') }}">Login</a>
+  </nav>
+</header>
+
+<main>
+  <h1>IDCODE Topup [BD SERVER]</h1>
+
+  {% if error %}
+    <div class="error-message">{{ error|safe }}</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('idcode_topup') }}">
+    <section class="select-recharge">
+      <h2>1. Select Recharge</h2>
+      <div class="recharge-grid">
+        {% for val, label, price in [
+          ('25','25 Diamond','24 TK'),
+          ('50','50 Diamond','40 TK'),
+          ('115','115 Diamond','80 TK'),
+          ('240','240 Diamond','159 TK'),
+          ('355','355 Diamond','240 TK'),
+          ('480','480 Diamond','318 TK'),
+          ('505','505 Diamond','349 TK'),
+          ('610','610 Diamond','407 TK'),
+          ('850','850 Diamond','563 TK'),
+          ('1090','1090 Diamond','735 TK'),
+          ('1240','1240 Diamond','803 TK'),
+          ('2530','2530 Diamond','1606 TK'),
+          ('5060','5060 Diamond','3213 TK'),
+          ('10120','10120 Diamond','6427 TK'),
+          ('weekly','Weekly','158 TK'),
+          ('monthly','Monthly','785 TK'),
+          ('weekly-lite','Weekly Lite','40 TK')
+          ] %}
+        <label class="recharge-option">
+          <input type="radio" name="diamond" value="{{ val }}"
+            {% if request.form.get('diamond') == val %}checked{% endif %}>
+          <span>{{ label }}</span>
+          <span class="price">{{ price }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="account-info">
+      <h2>2. Account Info</h2>
+      <label for="player-id">Player ID (UID)</label>
+      <input type="text" id="player-id" name="player_id" placeholder="Player ID (UID)" value="{{ request.form.player_id or '' }}" />
+    </section>
+
+    <section class="payment-options">
+      <h3>3. Select one option</h3>
+      <div class="payment-choice">
+        <input type="radio" id="wallet-pay" name="payment" value="wallet"
+          {% if (request.form.payment or 'wallet') == 'wallet' %}checked{% endif %} hidden>
+        <label for="wallet-pay">
+          <img src="https://i.postimg.cc/mDkZY96X/1748985510-walletlogo.png" alt="Wallet Pay" />
+          Wallet Pay
+        </label>
+
+        <input type="radio" id="instant-pay" name="payment" value="instant"
+          {% if request.form.payment == 'instant' %}checked{% endif %} hidden>
+        <label for="instant-pay">
+          <img src="https://i.postimg.cc/brQvrh5p/1748985415-autopay.png" alt="Instant Pay" />
+          Instant Pay
+        </label>
+      </div>
+    </section>
+
+    <button type="submit" class="login-submit">Login</button>
+
+    <div class="rules">
+      <b>Note:</b> Please double-check your Player ID. Payments once made cannot be refunded.
+    </div>
+  </form>
+</main>
+
+</body>
+</html>
+"""
+
+@app.route("/idcode-topup", methods=["GET", "POST"])
+def idcode_topup():
+    error = None
+    if request.method == "POST":
+        diamond = request.form.get("diamond")
+        player_id = request.form.get("player_id")
+        payment_method = request.form.get("payment")
+
+        errors = []
+        if not diamond:
+            errors.append("Please select a diamond package.")
+        if not player_id or player_id.strip() == "":
+            errors.append("Please enter your Player ID (UID).")
+        if not payment_method:
+            errors.append("Please select a payment method.")
+
+        if errors:
+            error = "<br>".join(errors)
+        else:
+            return f"""
+            <!DOCTYPE html>
+            <html><head><title>Order Success</title>
+            <style>
+              body {{ font-family: Arial, sans-serif; padding: 40px; background: #f5f7fa; text-align: center; }}
+              a {{ text-decoration: none; color: #b72647; font-weight: 700; }}
+              h2 {{ color: #b72647; margin-bottom: 25px; }}
+            </style>
+            </head><body>
+            <h2>Order received! {diamond} diamonds for Player ID {player_id} using {payment_method}.</h2>
+            <a href="{url_for('idcode_topup')}">Make another order</a>
+            </body></html>
+            """
+
+    return render_template_string(IDCODE_TEMPLATE, error=error, request=request)
+#next part here
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
+#next part here last
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=80)
