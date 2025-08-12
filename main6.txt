@@ -1,6 +1,10 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 import os
 import json
+import random
+import string
+import smtplib
+from email.message import EmailMessage
 from flask_dance.contrib.google import make_google_blueprint, google
 
 app = Flask(__name__)
@@ -17,90 +21,26 @@ PRODUCTS = [
 ]
 
 HOME_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>LOL TOPUP Clone</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { margin:0; font-family: Arial, sans-serif; background:#f8f9fa; }
-        header {
-            background: #fff;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            border-bottom: 1px solid #ddd;
-        }
-        .logo { font-size: 20px; font-weight: bold; color: #ff6600; }
-        .logo span { color: #6a1b9a; }
-        .login-btn {
-            background: #ff3b3b; color: white; border: none;
-            padding: 6px 12px; border-radius: 5px; cursor: pointer;
-        }
-        .product-section { padding: 15px; }
-        .product-section h2 { text-align: center; margin-bottom: 15px; }
-        .products {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
-        }
-        .product {
-            background: white; padding: 10px; border-radius: 8px;
-            text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            font-size: 14px; cursor: pointer;
-        }
-        .product img { width: 100%; border-radius: 5px; }
-        .bottom-nav {
-            position: fixed; bottom: 0; left: 0; right: 0;
-            background: white; border-top: 1px solid #ddd;
-            display: flex; justify-content: space-around; padding: 6px 0;
-        }
-        .bottom-nav a {
-            text-align: center; font-size: 12px; color: #333; text-decoration: none;
-        }
-    </style>
-</head>
-<body>
+LOL TOPUP Clone LOL TOPUP Login
 
-<header>
-    <div class="logo">LOL <span>TOPUP</span></div>
-    <button class="login-btn" onclick="location.href='{{ url_for('login') }}'">Login</button>
-</header>
+## FREE FIRE TOPUP
 
-<div class="product-section">
-    <h2>FREE FIRE TOPUP</h2>
-    <div class="products">
-        {% for p in products %}
-        <div class="product" onclick="location.href='{{ url_for('idcode_topup') if p.name.startswith('IDCODE') else '#' }}'">
-            <img src="{{ p.img }}" alt="{{ p.name }}">
-            <div>{{ p.name }}</div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
+{% for p in products %}
+  {{ p.name }}
+{% endfor %}
 
-<div class="bottom-nav">
-    <a href="#">🏠<br>Home</a>
-    <a href="#">🎥<br>Tutorial</a>
-    <a href="#">💎<br>TopUp</a>
-    <a href="#">📞<br>Contact Us</a>
-</div>
-
-</body>
-</html>
+🏠Home         🎥Tutorial         💎TopUp         📞Contact Us
 """
 
 @app.route("/")
 def home():
     return render_template_string(HOME_TEMPLATE, products=PRODUCTS)
 
-#next part here brotha
+
 # --- OAuth Setup ---
 GOOGLE_CLIENT_ID = "916283515013-i03jklnbutcqg0vlortds1tu1tptvulf.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "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"
 
-# For development only: allow HTTP (not HTTPS)
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 google_bp = make_google_blueprint(
@@ -111,28 +51,230 @@ google_bp = make_google_blueprint(
 )
 app.register_blueprint(google_bp, url_prefix="/login")
 
-# --- JSON login storage helpers ---
-LOGIN_FILE = "login.json"
 
-def load_logins():
-    if not os.path.exists(LOGIN_FILE):
-        with open(LOGIN_FILE, "w") as f:
+# --- JSON login storage helpers ---
+
+LOGIN_FILE = "login.json"
+VERIFY_FILE = "verify_codes.json"
+FORGOT_FILE = "forgot_codes.json"
+
+def load_json_file(filename):
+    if not os.path.exists(filename):
+        with open(filename, "w") as f:
             f.write("{}")
-    with open(LOGIN_FILE, "r") as f:
+    with open(filename, "r") as f:
         return json.load(f)
 
-def save_logins(data):
-    with open(LOGIN_FILE, "w") as f:
+def save_json_file(filename, data):
+    with open(filename, "w") as f:
         json.dump(data, f, indent=2)
 
-# --- Login route redirects to Google OAuth ---
-@app.route("/login")
+
+def load_logins():
+    return load_json_file(LOGIN_FILE)
+
+def save_logins(data):
+    save_json_file(LOGIN_FILE, data)
+
+def load_verify_codes():
+    return load_json_file(VERIFY_FILE)
+
+def save_verify_codes(data):
+    save_json_file(VERIFY_FILE, data)
+
+def load_forgot_codes():
+    return load_json_file(FORGOT_FILE)
+
+def save_forgot_codes(data):
+    save_json_file(FORGOT_FILE, data)
+
+
+# --- Email sending helper (using SMTP) ---
+def send_email(to_email, subject, content):
+    # NOTE: Replace with your SMTP server details and credentials
+    SMTP_SERVER = "smtp.gmail.com"
+    SMTP_PORT = 587
+    SMTP_USER = "youremail@gmail.com"
+    SMTP_PASS = "yourapppassword"
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = SMTP_USER
+    msg["To"] = to_email
+    msg.set_content(content)
+
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print("Failed to send email:", e)
+        return False
+
+#paste the next code here
+# --- Signup route ---
+SIGNUP_TEMPLATE = """
+<h2>Sign Up</h2>
+<form method="post">
+  Email:<br>
+  <input type="email" name="email" required value="{{ request.form.email or '' }}"><br>
+  Username:<br>
+  <input type="text" name="username" required value="{{ request.form.username or '' }}"><br>
+  Password:<br>
+  <input type="password" name="password" required><br>
+  Confirm Password:<br>
+  <input type="password" name="confirm_password" required><br>
+  <button type="submit">Sign Up</button>
+</form>
+<p style="color:red">{{ error or '' }}</p>
+"""
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not email or not username or not password or not confirm_password:
+            error = "All fields are required."
+        elif password != confirm_password:
+            error = "Passwords do not match."
+        else:
+            users = load_logins()
+            # Check if email or username already exists
+            if any(u.get("email") == email for u in users.values()):
+                error = "Email already registered."
+            elif any(u.get("username") == username for u in users.values()):
+                error = "Username already taken."
+            else:
+                # Create verification code
+                code = ''.join(random.choices(string.digits, k=6))
+                verify_codes = load_verify_codes()
+                verify_codes[email] = {
+                    "code": code,
+                    "username": username,
+                    "password": password  # store plaintext only temporarily until verified
+                }
+                save_verify_codes(verify_codes)
+
+                # Send verification code by email
+                subject = "LOL TOPUP Signup Verification Code"
+                content = f"Your verification code is: {code}\nEnter this code on the verification page to activate your account."
+                if send_email(email, subject, content):
+                    session["pending_email"] = email
+                    return redirect(url_for("verify_code"))
+                else:
+                    error = "Failed to send verification email. Please try again later."
+
+    return render_template_string(SIGNUP_TEMPLATE, error=error, request=request)
+
+
+# --- Verification code route ---
+VERIFY_TEMPLATE = """
+<h2>Verify Your Email</h2>
+<p>A verification code was sent to {{ email }}.</p>
+<form method="post">
+  Enter Code:<br>
+  <input type="text" name="code" required><br>
+  <button type="submit">Verify</button>
+</form>
+<p style="color:red">{{ error or '' }}</p>
+"""
+
+@app.route("/verify", methods=["GET", "POST"])
+def verify_code():
+    email = session.get("pending_email")
+    if not email:
+        return redirect(url_for("signup"))
+    error = None
+    if request.method == "POST":
+        entered_code = request.form.get("code", "").strip()
+        verify_codes = load_verify_codes()
+        data = verify_codes.get(email)
+        if not data:
+            error = "No verification code found. Please sign up again."
+        elif entered_code == data["code"]:
+            # Create user account
+            users = load_logins()
+            new_id = str(max([int(k) for k in users.keys()] + [0]) + 1)  # numeric user_id
+            users[new_id] = {
+                "email": email,
+                "username": data["username"],
+                "password": data["password"],  # store plaintext password (for demo; you should hash it!)
+                "name": data["username"],     # default name
+                "profile_pic": None
+            }
+            save_logins(users)
+
+            # Remove verification code
+            verify_codes.pop(email)
+            save_verify_codes(verify_codes)
+
+            session.pop("pending_email")
+            flash("Account verified! You can now log in.")
+            return redirect(url_for("login"))
+        else:
+            error = "Incorrect verification code."
+
+    return render_template_string(VERIFY_TEMPLATE, email=email, error=error)
+
+
+# --- Login route (email/username + password) ---
+LOGIN_TEMPLATE = """
+<h2>Login</h2>
+<form method="post">
+  Email or Username:<br>
+  <input type="text" name="login_id" required value="{{ request.form.login_id or '' }}"><br>
+  Password:<br>
+  <input type="password" name="password" required><br>
+  <button type="submit">Login</button>
+</form>
+<p>
+  <a href="{{ url_for('signup') }}">Sign Up</a> | <a href="{{ url_for('forgot_password') }}">Forgot Password?</a> | <a href="{{ url_for('login') }}?google=1">Login with Google</a>
+</p>
+<p style="color:red">{{ error or '' }}</p>
+"""
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    if google.authorized and session.get("user_id"):
-        return redirect(url_for("profile"))
-    return redirect(url_for("google.login"))
+    # If query param google=1, redirect to google oauth
+    if request.args.get("google") == "1":
+        if google.authorized and session.get("user_id"):
+            return redirect(url_for("profile"))
+        return redirect(url_for("google.login"))
+
+    error = None
+    if request.method == "POST":
+        login_id = request.form.get("login_id", "").strip().lower()
+        password = request.form.get("password", "")
+        users = load_logins()
+
+        # Search user by email or username
+        user = None
+        for uid, u in users.items():
+            if u.get("email", "").lower() == login_id or u.get("username", "").lower() == login_id:
+                user = (uid, u)
+                break
+
+        if not user:
+            error = "User not found."
+        elif user[1].get("password") != password:
+            error = "Incorrect password."
+        else:
+            session["user_id"] = user[0]
+            return redirect(url_for("profile"))
+
+    return render_template_string(LOGIN_TEMPLATE, error=error, request=request)
+
 
 # --- Google OAuth callback ---
+
 @app.route("/google_login_callback")
 def google_login_callback():
     if not google.authorized:
@@ -144,57 +286,32 @@ def google_login_callback():
     email = user_info["email"]
     user_id = user_info["id"]
 
-    # Load existing users
     users = load_logins()
-
     # Save or update user info
     users[user_id] = {
         "email": email,
         "name": user_info.get("name"),
-        "profile_pic": user_info.get("picture")
+        "profile_pic": user_info.get("picture"),
+        "username": email.split("@")[0],  # default username as email prefix
+        "password": None
     }
     save_logins(users)
 
-    # Save user id in session
     session["user_id"] = user_id
-
     return redirect(url_for("profile"))
-#next part here 2
+
+
+# --- Profile route ---
 PROFILE_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Profile - LOL TOPUP</title>
-<style>
-  body { font-family: Arial, sans-serif; background: #f5f7fa; padding: 20px; }
-  .profile {
-    background: white; max-width: 400px; margin: 30px auto; padding: 20px; border-radius: 10px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1); text-align: center;
-  }
-  img { border-radius: 50%; width: 100px; height: 100px; }
-  h2 { color: #b72647; margin: 15px 0 5px; }
-  p { font-size: 14px; color: #555; margin: 5px 0; }
-  a.logout {
-    display: inline-block; margin-top: 20px; color: #b72647; font-weight: 700;
-    text-decoration: none; border: 2px solid #b72647; padding: 8px 15px; border-radius: 6px;
-  }
-  a.logout:hover { background: #b72647; color: white; }
-</style>
-</head>
-<body>
-  <div class="profile">
-    {% if user %}
-      <img src="{{ user.profile_pic }}" alt="Profile Picture" />
-      <h2>{{ user.name }}</h2>
-      <p><b>Email:</b> {{ user.email }}</p>
-      <a href="{{ url_for('logout') }}" class="logout">Logout</a>
-    {% else %}
-      <p>You are not logged in. <a href="{{ url_for('login') }}">Login here</a></p>
-    {% endif %}
-  </div>
-</body>
-</html>
+<h2>Profile - LOL TOPUP</h2>
+{% if user %}
+  <img src="{{ user.profile_pic or 'https://via.placeholder.com/150' }}" alt="Profile Picture" width="150"><br>
+  <b>{{ user.name or user.username }}</b><br>
+  Email: {{ user.email }}<br>
+  <a href="{{ url_for('logout') }}">Logout</a>
+{% else %}
+  You are not logged in. <a href="{{ url_for('login') }}">Login here</a>
+{% endif %}
 """
 
 @app.route("/profile")
@@ -202,251 +319,170 @@ def profile():
     user_id = session.get("user_id")
     if not user_id:
         return redirect(url_for("login"))
-
     users = load_logins()
     user = users.get(user_id)
     return render_template_string(PROFILE_TEMPLATE, user=user)
-#next part here 3
-IDCODE_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>IDCODE Topup [BD SERVER]</title>
-<style>
-  body { font-family: Arial, sans-serif; background: #f5f7fa; padding: 20px; }
-  header {
-    background: #fff; padding: 10px 15px; border-bottom: 1px solid #ddd;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .logo { font-weight: bold; color: #b72647; font-size: 20px; }
-  nav a { margin-left: 10px; text-decoration: none; color: #b72647; font-weight: 600; }
-  h1 { color: #b72647; margin-top: 30px; }
-  form { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 0 12px rgba(0,0,0,0.1); max-width: 520px; margin: 20px auto; }
-  .error-message { color: red; font-weight: 700; margin-bottom: 10px; }
-  section { margin-bottom: 20px; }
-  .recharge-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 10px;
-  }
-  label.recharge-option {
-    border: 1.5px solid #ddd;
-    border-radius: 8px;
-    padding: 10px;
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: 600;
-    color: #333;
-    user-select: none;
-  }
-  label.recharge-option:hover {
-    border-color: #b72647;
-    color: #b72647;
-  }
-  label.recharge-option input {
-    display: none;
-  }
-  label.recharge-option input:checked + span {
-    font-weight: 700;
-    color: #b72647;
-  }
-  .price {
-    font-weight: 700;
-    color: #ff6600;
-    margin-left: 6px;
-  }
-  .account-info input {
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 14px;
-    border: 1.5px solid #ddd;
-    border-radius: 8px;
-  }
-  .payment-choice {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-  }
-  .payment-choice input {
-    display: none;
-  }
-  .payment-choice label {
-    border: 1.5px solid #ddd;
-    border-radius: 8px;
-    padding: 8px 12px;
-    cursor: pointer;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    color: #333;
-  }
-  .payment-choice label:hover {
-    border-color: #b72647;
-    color: #b72647;
-  }
-  .payment-choice input:checked + label {
-    border-color: #b72647;
-    color: #b72647;
-    font-weight: 700;
-  }
-  .payment-choice img {
-    width: 24px;
-    height: 24px;
-  }
-  .login-submit {
-    background: #b72647;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 12px;
-    width: 100%;
-    font-weight: 700;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  .login-submit:hover {
-    background: #8e1b38;
-  }
-  .rules {
-    margin-top: 15px;
-    font-size: 13px;
-    color: #666;
-  }
-</style>
-</head>
-<body>
 
-<header>
-  <div class="logo">LOL TOPUP</div>
-  <nav>
-    <a href="{{ url_for('home') }}">Home</a>
-    <a href="#">Contact Us</a>
-    <a href="{{ url_for('login') }}">Login</a>
-  </nav>
-</header>
 
-<main>
-  <h1>IDCODE Topup [BD SERVER]</h1>
-
-  {% if error %}
-    <div class="error-message">{{ error|safe }}</div>
-  {% endif %}
-
-  <form method="post" action="{{ url_for('idcode_topup') }}">
-    <section class="select-recharge">
-      <h2>1. Select Recharge</h2>
-      <div class="recharge-grid">
-        {% for val, label, price in [
-          ('25','25 Diamond','24 TK'),
-          ('50','50 Diamond','40 TK'),
-          ('115','115 Diamond','80 TK'),
-          ('240','240 Diamond','159 TK'),
-          ('355','355 Diamond','240 TK'),
-          ('480','480 Diamond','318 TK'),
-          ('505','505 Diamond','349 TK'),
-          ('610','610 Diamond','407 TK'),
-          ('850','850 Diamond','563 TK'),
-          ('1090','1090 Diamond','735 TK'),
-          ('1240','1240 Diamond','803 TK'),
-          ('2530','2530 Diamond','1606 TK'),
-          ('5060','5060 Diamond','3213 TK'),
-          ('10120','10120 Diamond','6427 TK'),
-          ('weekly','Weekly','158 TK'),
-          ('monthly','Monthly','785 TK'),
-          ('weekly-lite','Weekly Lite','40 TK')
-          ] %}
-        <label class="recharge-option">
-          <input type="radio" name="diamond" value="{{ val }}"
-            {% if request.form.get('diamond') == val %}checked{% endif %}>
-          <span>{{ label }}</span>
-          <span class="price">{{ price }}</span>
-        </label>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="account-info">
-      <h2>2. Account Info</h2>
-      <label for="player-id">Player ID (UID)</label>
-      <input type="text" id="player-id" name="player_id" placeholder="Player ID (UID)" value="{{ request.form.player_id or '' }}" />
-    </section>
-
-    <section class="payment-options">
-      <h3>3. Select one option</h3>
-      <div class="payment-choice">
-        <input type="radio" id="wallet-pay" name="payment" value="wallet"
-          {% if (request.form.payment or 'wallet') == 'wallet' %}checked{% endif %} hidden>
-        <label for="wallet-pay">
-          <img src="https://i.postimg.cc/mDkZY96X/1748985510-walletlogo.png" alt="Wallet Pay" />
-          Wallet Pay
-        </label>
-
-        <input type="radio" id="instant-pay" name="payment" value="instant"
-          {% if request.form.payment == 'instant' %}checked{% endif %} hidden>
-        <label for="instant-pay">
-          <img src="https://i.postimg.cc/brQvrh5p/1748985415-autopay.png" alt="Instant Pay" />
-          Instant Pay
-        </label>
-      </div>
-    </section>
-
-    <button type="submit" class="login-submit">Login</button>
-
-    <div class="rules">
-      <b>Note:</b> Please double-check your Player ID. Payments once made cannot be refunded.
-    </div>
-  </form>
-</main>
-
-</body>
-</html>
-"""
-
-@app.route("/idcode-topup", methods=["GET", "POST"])
-def idcode_topup():
-    error = None
-    if request.method == "POST":
-        diamond = request.form.get("diamond")
-        player_id = request.form.get("player_id")
-        payment_method = request.form.get("payment")
-
-        errors = []
-        if not diamond:
-            errors.append("Please select a diamond package.")
-        if not player_id or player_id.strip() == "":
-            errors.append("Please enter your Player ID (UID).")
-        if not payment_method:
-            errors.append("Please select a payment method.")
-
-        if errors:
-            error = "<br>".join(errors)
-        else:
-            return f"""
-            <!DOCTYPE html>
-            <html><head><title>Order Success</title>
-            <style>
-              body {{ font-family: Arial, sans-serif; padding: 40px; background: #f5f7fa; text-align: center; }}
-              a {{ text-decoration: none; color: #b72647; font-weight: 700; }}
-              h2 {{ color: #b72647; margin-bottom: 25px; }}
-            </style>
-            </head><body>
-            <h2>Order received! {diamond} diamonds for Player ID {player_id} using {payment_method}.</h2>
-            <a href="{url_for('idcode_topup')}">Make another order</a>
-            </body></html>
-            """
-
-    return render_template_string(IDCODE_TEMPLATE, error=error, request=request)
-#next part here
+# --- Logout route ---
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("home"))
-#next part here last
+
+#paste the next code here
+# --- Forgot password route ---
+FORGOT_TEMPLATE = """
+<h2>Forgot Password</h2>
+<form method="post">
+  Enter your registered email:<br>
+  <input type="email" name="email" required value="{{ request.form.email or '' }}"><br>
+  <button type="submit">Send Reset Code</button>
+</form>
+<p style="color:red">{{ error or '' }}</p>
+"""
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        users = load_logins()
+        # Find user by email
+        user_id = None
+        for uid, u in users.items():
+            if u.get("email", "").lower() == email:
+                user_id = uid
+                break
+        if not user_id:
+            error = "Email not found."
+        else:
+            # Create reset code and save it
+            code = ''.join(random.choices(string.digits, k=6))
+            forgot_codes = load_forgot_codes()
+            forgot_codes[email] = {
+                "code": code,
+                "user_id": user_id
+            }
+            save_forgot_codes(forgot_codes)
+
+            # Send reset code email
+            subject = "LOL TOPUP Password Reset Code"
+            content = f"Your password reset code is: {code}\nEnter this code on the reset page to change your password."
+            if send_email(email, subject, content):
+                session["forgot_email"] = email
+                return redirect(url_for("reset_password"))
+            else:
+                error = "Failed to send reset email. Please try again later."
+
+    return render_template_string(FORGOT_TEMPLATE, error=error, request=request)
+
+
+# --- Reset password route ---
+RESET_TEMPLATE = """
+<h2>Reset Password</h2>
+<p>A reset code was sent to {{ email }}.</p>
+<form method="post">
+  Enter Reset Code:<br>
+  <input type="text" name="code" required><br>
+  New Password:<br>
+  <input type="password" name="new_password" required><br>
+  Confirm Password:<br>
+  <input type="password" name="confirm_password" required><br>
+  <button type="submit">Reset Password</button>
+</form>
+<p style="color:red">{{ error or '' }}</p>
+"""
+
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    email = session.get("forgot_email")
+    if not email:
+        return redirect(url_for("forgot_password"))
+    error = None
+    if request.method == "POST":
+        entered_code = request.form.get("code", "").strip()
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if new_password != confirm_password:
+            error = "Passwords do not match."
+        else:
+            forgot_codes = load_forgot_codes()
+            data = forgot_codes.get(email)
+            if not data:
+                error = "No reset code found. Please try forgot password again."
+            elif entered_code != data["code"]:
+                error = "Incorrect reset code."
+            else:
+                # Update password
+                users = load_logins()
+                user_id = data["user_id"]
+                if user_id in users:
+                    users[user_id]["password"] = new_password
+                    save_logins(users)
+                    # Remove reset code
+                    forgot_codes.pop(email)
+                    save_forgot_codes(forgot_codes)
+                    session.pop("forgot_email")
+                    flash("Password reset successful! Please login.")
+                    return redirect(url_for("login"))
+                else:
+                    error = "User not found."
+
+    return render_template_string(RESET_TEMPLATE, email=email, error=error)
+
+
+# --- IDCODE Topup route (existing) ---
+IDCODE_TEMPLATE = """
+<h2>IDCODE Topup [BD SERVER]</h2>
+<a href="{{ url_for('home') }}">LOL TOPUP Home</a> | <a href="{{ url_for('logout') }}">Logout</a>
+
+{% if error %}
+  <p style="color:red">{{ error|safe }}</p>
+{% endif %}
+
+<form method="post">
+  <h3>1. Select Recharge</h3>
+  {% for val, label, price in [
+      ('25','25 Diamond','24 TK'),
+      ('50','50 Diamond','40 TK'),
+      ('115','115 Diamond','80 TK'),
+      ('240','240 Diamond','159 TK'),
+      ('355','355 Diamond','240 TK'),
+      ('480','480 Diamond','318 TK'),
+      ('505','505 Diamond','349 TK'),
+      ('610','610 Diamond','407 TK'),
+      ('850','850 Diamond','563 TK'),
+      ('1090','1090 Diamond','735 TK'),
+      ('1240','1240 Diamond','803 TK'),
+      ('2530','2530 Diamond','1606 TK'),
+      ('5060','5060 Diamond','3213 TK'),
+      ('10120','10120 Diamond','6427 TK'),
+      ('weekly','Weekly','158 TK'),
+      ('monthly','Monthly','785 TK'),
+      ('weekly-lite','Weekly Lite','40 TK')
+      ] %}
+    <input type="radio" name="diamond" value="{{ val }}" id="d{{ loop.index }}"
+    {% if (request.form.diamond or '') == val %}checked{% endif %}>
+    <label for="d{{ loop.index }}">{{ label }} - {{ price }}</label><br>
+  {% endfor %}
+
+  <h3>2. Account Info</h3>
+  Player ID (UID): <input type="text" name="player_id" value="{{ request.form.player_id or '' }}" required><br>
+
+  <h3>3. Select Payment Option</h3>
+  <input type="radio" name="payment" value="wallet" id="wallet"
+  {% if (request.form.payment or 'wallet') == 'wallet' %}checked{% endif %}>
+  <label for="wallet">Wallet Pay</label>
+
+  <input type="radio" name="payment" value="instant" id="instant"
+  {% if request.form.payment == 'instant' %}checked{% endif %}>
+  <label for="instant">Instant Pay</label><br><br>
+
+  <button type="submit">Order</button>
+</form>
+
+<div><b>Note:</b> Please double-check your
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=80)
